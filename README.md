@@ -13,6 +13,7 @@ For more details, please refer to our [report on Arxiv](https://arxiv.org/abs/21
 * 【2021/07/20】 We have released our technical report on [Arxiv](https://arxiv.org/abs/2107.08430).
 
 ## Comming soon
+- [ ] Weights and biases integration.
 - [ ] YOLOX-P6 and larger model.
 - [ ] Objects365 pretrain.
 - [ ] Transformer modules.
