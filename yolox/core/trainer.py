@@ -52,7 +52,7 @@ class Trainer:
         self.best_ap = 0
 
         # metric record
-        self.meter = MeterBuffer(window_size=exp.print_interval)
+        self.meter = MeterBuffer(window_size=self.exp.print_interval)
         self.file_name = os.path.join(exp.output_dir, args.experiment_name)
 
         if self.rank == 0:
@@ -215,6 +215,9 @@ class Trainer:
             all_reduce_norm(self.model)
             self.evaluate_and_save_model()
 
+        # Clear meters here for the last iter in each epoch.
+        self.meter.clear_meters()
+
     def before_iter(self):
         pass
 
@@ -224,7 +227,7 @@ class Trainer:
             * log information
             * reset setting of resize
         """
-        # log needed information
+        # log needed information every `print_interval`
         if (self.iter + 1) % self.exp.print_interval == 0:
             # TODO check ETA logic
             left_iters = self.max_iter * self.max_epoch - (self.progress_in_iter + 1)
@@ -254,7 +257,13 @@ class Trainer:
                 )
                 + (", size: {:d}, {}".format(self.input_size[0], eta_str))
             )
-            self.meter.clear_meters()
+
+            # Do not clear outputs if it's not the last iteration in epoch
+            # because we want to write them to tensorboard. However because
+            # we're doing this, we need to clear the meters in
+            # self::after_epoch.
+            if self.iter + 1 < self.max_iter:
+                self.meter.clear_meters()
 
         # random resizing
         if self.exp.random_size is not None and (self.progress_in_iter + 1) % 10 == 0:
@@ -308,10 +317,40 @@ class Trainer:
             evalmodel, self.evaluator, self.is_distributed
         )
         self.model.train()
+
+
         if self.rank == 0:
-            self.tblogger.add_scalar("val/COCOAP50", ap50, self.epoch + 1)
-            self.tblogger.add_scalar("val/COCOAP50_95", ap50_95, self.epoch + 1)
+            log_epoch = self.epoch + 1
+
+            log_tags = ['train/loss', 'train/box_loss', 'train/obj_loss',
+                    'train/cls_loss', 'metrics/precision', 'metrics/recall',
+                    'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95', 'val/box_loss',
+                    'val/obj_loss', 'val/cls_loss', 'x/lr0', 'x/lr1', 'x/lr2']
+
+
+            """
+            loss_meter = self.meter.get_filtered_meter("loss")
+            loss_str = ", ".join(
+                ["{}: {:.1f}".format(k, v.latest) for k, v in loss_meter.items()]
+            )
+            """
+
+            tlosses = [self.meter.get('total_loss'), self.meter.get('iou_loss'),
+                    self.meter.get('conf_loss'), self.meter.get('cls_loss')]
+            metrics = [0, 0, ap50, ap50_95]
+            vlosses = [0, 0, 0]
+            lrs = [x["lr"] for x in self.optimizer.param_groups]
+
+            vals = tlosses + metrics + vlosses + lrs
+
+            log = {k: v for k, v in zip(log_tags, vals)}
+
+            # Log to tensorboard
+            for k, v in log.items():
+                self.tblogger.add_scalar(k, v, log_epoch)
+
             logger.info("\n" + summary)
+
         synchronize()
 
         self.save_ckpt("last_epoch", ap50_95 > self.best_ap)
