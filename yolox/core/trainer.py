@@ -322,28 +322,23 @@ class Trainer:
         if self.rank == 0:
             log_epoch = self.epoch + 1
 
-            log_tags = ['train/loss', 'train/box_loss', 'train/obj_loss',
-                    'train/cls_loss', 'metrics/precision', 'metrics/recall',
-                    'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95', 'val/box_loss',
-                    'val/obj_loss', 'val/cls_loss', 'x/lr0', 'x/lr1', 'x/lr2']
-
-
-            """
-            loss_meter = self.meter.get_filtered_meter("loss")
-            loss_str = ", ".join(
-                ["{}: {:.1f}".format(k, v.latest) for k, v in loss_meter.items()]
-            )
-            """
-
-            tlosses = [self.meter.get('total_loss'), self.meter.get('iou_loss'),
-                    self.meter.get('conf_loss'), self.meter.get('cls_loss')]
-            metrics = [0, 0, ap50, ap50_95]
-            vlosses = [0, 0, 0]
             lrs = [x["lr"] for x in self.optimizer.param_groups]
-
-            vals = tlosses + metrics + vlosses + lrs
-
-            log = {k: v for k, v in zip(log_tags, vals)}
+            log = {
+                    'train/loss': self.meter.get('total_loss').latest,
+                    'train/box_loss': self.meter.get('iou_loss').latest,
+                    'train/obj_loss': self.meter.get('conf_loss').latest,
+                    'train/cls_loss': self.meter.get('cls_loss').latest,
+                    'metrics/precision': 0,
+                    'metrics/recall': 0,
+                    'metrics/mAP_0.5': ap50,
+                    'metrics/mAP_0.5:0.95': ap50_95,
+                    'val/box_loss': 0,
+                    'val/obj_loss': 0,
+                    'val/cls_loss': 0,
+                    'x/lr0': lrs[0],
+                    'x/lr1': lrs[1],
+                    'x/lr2': lrs[2],
+                    }
 
             # Log to tensorboard
             for k, v in log.items():
